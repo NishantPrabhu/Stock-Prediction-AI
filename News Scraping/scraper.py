@@ -5,6 +5,7 @@ import os
 import time
 import json
 import pickle
+from unidecode import unidecode
 from selenium import webdriver
 from selenium.webdriver.common.keys import Keys 
 
@@ -80,11 +81,10 @@ class Scraper:
                 tstamps = [t for t in timestamps if len(t.text) > 0]
 
                 for i, t in enumerate(titles[:-3]):
-                    # if len(t.text) > 0:
                     self.all_data.append({
                         'link': t.get_attribute('href'),
                         'title': t.text,
-                        'time': tstamps[i]
+                        'time': tstamps[i].text
                     })
 
                 for t in tstamps:
@@ -94,6 +94,7 @@ class Scraper:
                 keys = list(set([d['title'] for d in self.all_data]))
                 current_on = tstamps[0].text
                 print(f"[{self.ticker}] - [Reached] {current_on} - [Total clips] {len(keys)}")
+                self.save_data_temp_()
 
                 self.driver.get(self.buffer_url + f'/{count}')
                 count += 1
@@ -101,33 +102,24 @@ class Scraper:
 
             except Exception as e:
                 print(e)
-                print("Some error happened")
                 self.save_data_temp_()
                 done = True
 
     def scrape_news_(self):
+        print("\n[INFO] Beginning news scrape!\n")
         self.driver.get(self.buffer_url)
         for i in range(len(self.all_data)):
-            try:
-                self.driver.get(self.all_data[i]['link'])
-                if ('seekingalpha' in self.driver.current_url):
-                    continue
-
-                paras = self.driver.find_elements_by_tag_name('p')
-                paras = [p for p in paras if len(p.text) > 0]
-                text = [p.text for p in paras]
-                self.all_data[i]['text'] = ' '.join(text)
-                
-                print(f"{self.all_data[i]['time']} - {self.all_data[i]['title']}")
-                if '2010' in self.all_data[i]['time']:
-                    print("\n[INFO] Reached 2010, stopping scrape process.")
-                    break
-
-                if (i % 10) == 0:
-                    self.save_data_temp_()
-
-            except Exception as e:
+            self.driver.get(self.all_data[i]['link'])
+            if ('seekingalpha' in self.driver.current_url):
                 continue
+
+            paras = self.driver.find_elements_by_tag_name('p')
+            paras = [p for p in paras if len(p.text) > 0]
+            text = [p.text for p in paras]
+            self.all_data[i]['text'] = unidecode(' '.join(text))
+            
+            print(f"{i+1} {self.all_data[i]['time']} - {self.all_data[i]['title']}")
+            self.save_data_temp_()
 
     def save_data_(self):
         with open(f"saved_data/{self.ticker}.pkl", "wb") as f:
@@ -141,5 +133,5 @@ class Scraper:
     def run(self):
         self.get_news_page_()
         self.scrape_titles_()
-        self.scrape_news_()
+        # self.scrape_news_()
         self.save_data_()
