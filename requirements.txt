@@ -1,0 +1,7 @@
+streamlit
+beautifulsoup4
+transformers
+sentencepiece
+tqdm
+requests
+# torch
