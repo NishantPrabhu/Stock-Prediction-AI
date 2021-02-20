@@ -12,7 +12,7 @@ services:
                 max-file: "3"
 
     webserver:
-        image: 7vasudevgupta/cfi-stock-ai
+        image: cfi-stock-ai
         restart: always
         depends_on:
             - postgres

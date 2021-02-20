@@ -5,12 +5,9 @@ Analytics Club project 2020
 ## Starting App
 
 ```shell
-# init airflow webserver
-docker-compose -f docker-compose-LocalExecutor.yml up -d
+# building docker image
+docker build -f Dockerfile -t cfi-stock-ai .
 
-# get <container_id>
-docker ps
-
-# init streamlit app
-docker exec -it <container_id> python dags/app.py 
+docker run -it -v <absolute-path-to-dags-folder>:/usr/local/airflow/dags -p 85:8501 cfi-stock-ai streamlit run dags/app.py
+# app is available at localhost:85
 ```

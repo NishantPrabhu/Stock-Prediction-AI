@@ -18,6 +18,9 @@ if __name__ == '__main__':
     ## Summary
     """)
 
+    # TODO: we will later schedule this
+    fetch_news_for_summarization()
+
     fetch_news_button = st.button("fetch news")
     if fetch_news_button:
         if "articles_for_summarization.txt" in os.listdir("metadata/"):
