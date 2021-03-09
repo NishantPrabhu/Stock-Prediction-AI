@@ -135,7 +135,7 @@ class Scraper:
                     paras = [p for p in paras if len(p.text) > 0]
                     text = [p.text for p in paras]
                     self.all_data[index]['text'] = unidecode(' '.join(text))
-                    
+
                     print(f"{index} - PID {self.pid} - {self.all_data[index]['time'][3:]} - {self.all_data[index]['title']}")
                     self.save_data_temp_()
 
@@ -174,4 +174,3 @@ class Scraper:
             self.scrape_news_()
             self.save_data_()
             self.combine_files()
-       
