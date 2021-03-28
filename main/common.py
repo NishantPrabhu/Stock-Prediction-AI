@@ -1,22 +1,21 @@
 
-""" 
-Standard experiment utilities. 
-
+"""
+Standard experiment utilities.
 Authors: Mukund Varma T, Nishant Prabhu
 """
 
 import os
 import yaml
 import logging
-import random 
-import torch 
+import random
+import torch
 import numpy as np
 
 
 COLORS = {
-    "yellow": "\x1b[33m", 
-    "blue": "\x1b[94m", 
-    "green": "\x1b[32m", 
+    "yellow": "\x1b[33m",
+    "blue": "\x1b[94m",
+    "green": "\x1b[32m",
     "end": "\033[0m"
 }
 
@@ -33,7 +32,7 @@ def progress_bar(progress=0, status="", bar_len=20):
     status = status.ljust(30)
     if progress == 1:
         status = "{}".format(status.ljust(30))
-    
+
     block = int(round(bar_len * progress))
     text = "\rProgress: [{}] {:.2f}% {}".format(
         COLORS['green'] + "="*(block-1) + ">" + COLORS['end'] + '-'*(bar_len-block), round(progress*100, 2), status
@@ -59,10 +58,10 @@ class AverageMeter:
                     self.metrics[key].append(value)
                 else:
                     raise KeyError(f'Metric key "{key}" not found')
-                
+
     def return_metrics(self):
         metrics = {key: np.mean(value) for key, value in self.metrics.items()}
-        return metrics 
+        return metrics
 
     def return_msg(self):
         metrics = self.return_metrics()
@@ -74,7 +73,7 @@ class Logger:
     ''' For logging and sending messages to terminal '''
 
     def __init__(self, output_dir):
-        
+
         # Reset logger and setup output file
         [logging.root.removeHandler(handler) for handler in logging.root.handlers[:]]
         logging.basicConfig(
@@ -135,7 +134,7 @@ def init_experiment(args, seed=420):
     config = open_config(args["config"])
 
     # Setup logging directory
-    output_dir = os.path.join('simple_nbeats', args["output"])
+    output_dir = os.path.join(args["task"], args["output"])
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
     logger = Logger(output_dir)

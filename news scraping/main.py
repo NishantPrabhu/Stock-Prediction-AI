@@ -1,4 +1,3 @@
-
 # Main script
 
 import scraper
