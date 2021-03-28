@@ -1,3 +1,5 @@
 .vscode/
 wandb/
+notebooks/
+news_data/
 __pycache__
