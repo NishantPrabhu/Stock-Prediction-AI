@@ -16,6 +16,7 @@ COLORS = {
     "yellow": "\x1b[33m",
     "blue": "\x1b[94m",
     "green": "\x1b[32m",
+    "red": "\033[31m"
     "end": "\033[0m"
 }
 
@@ -89,6 +90,8 @@ class Logger:
             print(f"\n[TRAIN] {msg}")
         elif mode == 'val':
             print(f"\n{COLORS['blue']}[VALID] {msg}{COLORS['end']}")
+        elif mode == 'warn':
+            print(f"\n{COLORS['red']}[VALID] {msg}{COLORS['end']}")
         else:
             print(f"{msg}")
 
@@ -99,6 +102,8 @@ class Logger:
             msg = f"[TRAIN] {msg}"
         elif mode == "val":
             msg = f"[VAL] {msg}"
+        elif mode == 'warn':
+            msg = f"[WARN] {msg}"
         else:
             msg = f"{msg}"
         logging.info(msg)

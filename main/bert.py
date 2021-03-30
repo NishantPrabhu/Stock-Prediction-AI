@@ -1,11 +1,11 @@
 
-""" 
+"""
 BERT model definition
 """
 
 import math
 import torch
-import torch.nn as nn 
+import torch.nn as nn
 import torch.nn.functional as F
 
 
@@ -17,15 +17,15 @@ class SelfAttention(nn.Module):
         self.model_dim = model_dim
         if self.model_dim % self.heads != 0:
             raise ValueError(f'Working dimension ({model_dim}) not a multiple of num_heads ({num_heads})')
-        
+
         self.query = nn.Linear(model_dim, model_dim, bias=False)
         self.key = nn.Linear(model_dim, model_dim, bias=False)
-        self.value = nn.Linear(model_dim, model_dim, bias=False) 
+        self.value = nn.Linear(model_dim, model_dim, bias=False)
         self.layer_norm = nn.LayerNorm(model_dim)
 
     def forward(self, x):
         x = self.layer_norm(x)
-        bs, n, _ = x.size()                     
+        bs, n, _ = x.size()
         q = self.query(x).view(bs, n, self.heads, self.model_dim // self.heads)                     # (bs, n, heads, d)
         k = self.key(x).view(bs, n, self.heads, self.model_dim // self.heads)                       # (bs, n, heads, d)
         v = self.value(x).view(bs, n, self.heads, self.model_dim // self.heads)                     # (bs, n, heads, d)
@@ -33,7 +33,7 @@ class SelfAttention(nn.Module):
         q = q.permute(0, 2, 1, 3).contiguous()                                                      # (bs, heads, n, d)
         k = k.permute(0, 2, 1, 3).contiguous()                                                      # (bs, heads, n, d)
         v = v.permute(0, 2, 1, 3).contiguous()                                                      # (bs, heads, n, d)
-        attn_scores = torch.einsum('bhid,bhjd->bhij', [q, k]) / math.sqrt(self.model_dim)           # (bs, heads, n, n)          
+        attn_scores = torch.einsum('bhid,bhjd->bhij', [q, k]) / math.sqrt(self.model_dim)           # (bs, heads, n, n)
         attn_probs = F.softmax(attn_scores, dim=-1)
         context = torch.einsum('bhij,bhjd->bhid', [attn_probs, v])                                  # (bs, heads, n, d)
         context = context.permute(0, 2, 1, 3).contiguous().view(bs, n, -1)                          # (bs, n, model_dim)
@@ -53,7 +53,7 @@ class PositionalEmbedding(nn.Module):
         enc = self.transform(locs)                                                        # (bs, n, embed_dim)
         return torch.cat((x, enc), dim=-1)                                                # (bs, n, 2*embed_dim)
 
-    
+
 class Feedforward(nn.Module):
 
     def __init__(self, model_dim, hidden_dim):
