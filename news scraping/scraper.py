@@ -65,11 +65,16 @@ class Scraper:
         inp_field.send_keys(Keys.RETURN)
         time.sleep(5)
         links = self.driver.find_elements_by_xpath("""//span""")
-        for l in links:
-            if l.text == self.ticker:
-                l.click()
-                break
+        try:
+            for l in links:
+                if l.text == self.ticker:
+                    l.click()
+                    break
+        except Exception as e:
+            print(e)
+            self.driver.refresh()
 
+        time.sleep(5)
         news_links = self.driver.find_elements_by_xpath("""//a[contains(@href, 'news')]""")
         news_links = [l for l in news_links if len(l.text) > 0]
         news_links[2].click()
