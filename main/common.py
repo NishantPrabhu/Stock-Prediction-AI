@@ -16,7 +16,7 @@ COLORS = {
     "yellow": "\x1b[33m",
     "blue": "\x1b[94m",
     "green": "\x1b[32m",
-    "red": "\033[31m"
+    "red": "\033[31m",
     "end": "\033[0m"
 }
 
@@ -139,7 +139,7 @@ def init_experiment(args, seed=420):
     config = open_config(args["config"])
 
     # Setup logging directory
-    output_dir = os.path.join(args["task"], args["output"])
+    output_dir = os.path.join("./outputs", args["output"])
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
     logger = Logger(output_dir)

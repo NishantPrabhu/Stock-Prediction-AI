@@ -92,7 +92,7 @@ class Encoder(nn.Module):
 
     def forward(self, x):
         for i in range(self.num_layers):
-            x = self.blocks[i](x)
+            x = self.blocks[i](x)                                                       # (num_stocks, lookback, model_dim)
         return x
 
 
@@ -103,5 +103,14 @@ class ClassificationHead(nn.Module):
         self.fc = nn.Linear(model_dim, num_classes)
 
     def forward(self, x):
-        ''' Input will have size (bs, seq_length, model_dim) '''
+        ''' Input will have size (num_stocks, model_dim) '''
         return self.fc(x)
+
+
+if __name__ == "__main__":
+
+    config = {'model_dim': 256, 'ff_dim': 256, 'num_heads': 4, 'num_layers': 6}
+    encoder = Encoder(config)
+    x = torch.rand((10, 7, 3))
+    out = encoder(x)
+    print(out.size())

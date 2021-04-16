@@ -4,6 +4,7 @@ Model definitions
 """
 
 import os
+import common
 import wandb
 import torch
 import metrics
@@ -14,6 +15,7 @@ import numpy as np
 import torch.nn as nn
 import seaborn as sns
 import matplotlib.pyplot as plt
+import sklearn.metrics as metrics
 
 
 class StockMovementClassifier:
@@ -22,28 +24,33 @@ class StockMovementClassifier:
         self.config, self.output_dir, self.logger, self.device = common.init_experiment(args)
 
         # Networks
-        self.price_encoder = networks.PriceEncoder(config['price_encoder']).to(self.device)
-        self.news_encoder = networks.NewsEncoder(config['news_encoder']).to(self.device)
-        self.graph_attention = networks.MultiHeadGraphAttention(config['graph_attention']).to(self.device)
-        self.clf_head = networks.Classifier(config['classifier']).to(self.device)
+        self.price_encoder = networks.PriceEncoder(self.config['price_encoder']).to(self.device)
+        self.news_encoder = networks.NewsEncoder(self.device).to(self.device)
+        self.graph_attention = networks.MultiHeadGraphAttention(self.config['graph_attention']).to(self.device)
+        self.clf_head = networks.Classifier(self.config['classifier']).to(self.device)
 
         # Optimizer, loss function, scheduler
         self.criterion = nn.NLLLoss()
         self.optim = train_utils.get_optimizer(
-            config = config['optimizer'],
+            config = self.config['optimizer'],
             params = list(self.price_encoder.parameters()) + list(self.news_encoder.parameters()) +
                         list(self.graph_attention.parameters()) + list(self.clf_head.parameters()))
         self.scheduler, self.warmup_epochs = train_utils.get_scheduler(
-            config = config['scheduler'], optimizer = self.optim)
+            config = {**self.config['scheduler'], "epochs": self.config["epochs"]}, optimizer = self.optim)
+
+        if self.warmup_epochs > 0:
+            self.warmup_rate = self.optim.param_groups[0]['lr'] / self.warmup_epochs
 
         # Dataloaders
         self.train_loader, self.val_loader = data_utils.get_dataloaders(
-            root=config['data'].get['root'], batch_size=config['data']['batch_size'])
+            root = self.config['data'].get('root', '../data/main'), 
+            test_size = self.config['data'].get('test_size', 0.2),
+            lookback_length = self.config['data'].get('lookback_length', 7))
 
         # Logging and wandb
         self.best_val_score = 0
         self.done_epochs = 0
-        run = wandb.init('stock-prediction-ai')
+        run = wandb.init(project='stock-prediction-ai-forecasting')
         self.logger.write("Wandb: " + run.get_url(), mode='info')
 
         # Load model if specified
@@ -111,7 +118,21 @@ class StockMovementClassifier:
         self.news_encoder.load_state_dict(state["news_encoder"])
         self.graph_attention.load_state_dict(state["graph_attention"])
         self.clf_head.load_state_dict(state["clf_head"])
-        self.logger.record(f"Successfully loaded model from {output_dir}!", mode='info')
+        self.logger.record(f"Successfully loaded model from {output_dir}", mode='info')
+
+    def adjust_learning_rate(self, epoch):
+        if epoch < self.warmup_epochs:
+            for group in self.optim.param_groups:
+                group['lr'] = 1e-12 + (epoch * self.warmup_rate)
+        else:
+            self.scheduler.step()
+
+    def get_metrics(self, output, target):
+        preds = output.argmax(dim=-1).detach().cpu().numpy()
+        target = target.detach().cpu().numpy()
+        acc = metrics.accuracy_score(target, preds)
+        f1 = metrics.f1_score(target, preds, zero_division=0)
+        return {"accuracy": acc, "f1": f1}
 
     def train_one_step(self, batch):
         self.trainable(True)
@@ -120,12 +141,12 @@ class StockMovementClassifier:
         news_fs = self.news_encoder(news)
         out = self.clf_head(self.graph_attention(price_fs, news_fs))
         loss = self.criterion(out, trg)
-        acc = metrics.accuracy(out, trg)
+        eval_metrics = self.get_metrics(out, trg)
 
         self.optim.zero_grad()
         loss.backward()
         self.optim.step()
-        return {"Loss": loss.item(), "Accuracy": acc}
+        return {"loss": loss.item(), **eval_metrics}
 
     def validate_one_step(self, batch):
         self.trainable(False)
@@ -134,10 +155,10 @@ class StockMovementClassifier:
             price_fs = self.price_encoder(prices)
             news_fs = self.news_encoder(news)
             out = self.clf_head(self.graph_attention(price_fs, news_fs))
-
+        
         loss = self.criterion(out, trg)
-        acc = metrics.accuracy(out, trg)
-        return {"Loss": loss.item(), "Accuracy": acc}
+        eval_metrics = self.get_metrics(out, trg)
+        return {"loss": loss.item(), **eval_metrics}
 
     def get_stock_attention_probs(self):
         batch = self.val_loader.get_last_batch()
@@ -166,13 +187,16 @@ class StockMovementClassifier:
                 batch = self.train_loader.flow()
                 train_metrics = self.train_one_step(batch)
                 train_meter.add(train_metrics)
-                wandb.log({"Train loss": train_metrics["Loss"]})
+                wandb.log({"Train loss": train_metrics["loss"]})
                 common.progress_bar(
                     progress = (step+1)/len(self.train_loader),
                     status = train_meter.return_msg())
 
             common.progress_bar(progress=1.0, status=train_meter.return_msg())
-            wandb.log({"Train accuracy": train_meter.return_metrics()["Accuracy"], "Epoch": epoch+1})
+            wandb.log({
+                "Train accuracy": train_meter.return_metrics()["accuracy"], 
+                "Train F1 score": train_meter.return_metrics()["f1"],
+                "Epoch": epoch+1})
             self.logger.write(train_meter.return_msg(), mode='train')
             self.save_state(epoch+1)
 
@@ -189,14 +213,19 @@ class StockMovementClassifier:
                 common.progress_bar(progress=1.0, status=val_meter.return_msg())
                 self.logger.write(val_meter.return_msg(), mode='val')
                 wandb.log({
-                    "Validation loss": val_meter.return_metrics()["Loss"],
-                    "Validation accuracy": val_meter.return_metrics()["Accuracy"]})
+                    "Validation loss": val_meter.return_metrics()["loss"],
+                    "Validation accuracy": val_meter.return_metrics()["accuracy"],
+                    "Validation F1 score": val_meter.return_metrics()["f1"]
+                })
 
                 # Save model if better than current best
                 val_results = val_meter.return_metrics()
-                if val_results["Accuracy"] > self.best_val_score:
-                    self.best_val_score = val_results["Accuracy"]
+                if val_results["accuracy"] > self.best_val_score:
+                    self.best_val_score = val_results["accuracy"]
                     self.save_model()
+
+            # Update learning rate
+            self.adjust_learning_rate(epoch+1)
 
         # Training complete
         self.logger.record("Training complete!", mode='info')

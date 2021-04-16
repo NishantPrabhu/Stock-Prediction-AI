@@ -1,5 +1,7 @@
 .vscode/
+data/
 wandb/
 notebooks/
 news_data/
-__pycache__
+news_scraping/
+__pycache__/

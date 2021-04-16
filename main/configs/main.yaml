@@ -1,0 +1,38 @@
+
+# Stock movement classifier configuration 
+
+epochs: 100 
+eval_every: 5
+
+# Networks 
+price_encoder:
+  model_dim: 128
+  ff_dim: 256
+  num_heads: 4
+  num_layers: 4
+
+graph_attention:
+  num_heads: 4
+  prices_dim: 128
+  news_dim: 768
+  hidden_dim: 128
+  graph_dim: 128
+
+classifier:
+  graph_dim: 128
+
+# Optimization
+optimizer:
+  name: sgd
+  lr: 0.001
+  weight_decay: 0.0001
+
+scheduler:
+  name: cosine
+  warmup_epochs: 5
+
+# Data
+data:
+  root: ../data/main/
+  test_size: 0.2
+  lookback_length: 7

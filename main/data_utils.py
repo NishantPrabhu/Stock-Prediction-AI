@@ -5,98 +5,86 @@ Data handlers
 
 import os
 import json
+import torch
+import pickle
 import ntpath
 import random
-import pandas as pd
 import numpy as np
+import pandas as pd
 from tqdm import tqdm
+from transformers import BertTokenizer
 
 
-def load_data(data_root, ticker):
-    price_data = pd.read_csv(os.path.join(data_root, "prices", ticker+".csv"))
-    news_data = json.load(open(os.path.join(data_root, "news", ticker+".json"), "r"))
-    news_dates = [d['date'] for d in news_data]
-    news = [d['text'] for d in news_data]
-    return price_data, news_dates, news
+def load_data(root):
+    with open(os.path.join(root, "prices_aligned.pkl"), "rb") as f:
+        prices = pickle.load(f)
+    with open(os.path.join(root, "news_aligned.pkl"), "rb") as f:
+        news = pickle.load(f)
+    return prices, news 
 
 
 class DataLoader:
 
-    def __init__(self, root, batch_size, device):
-        if not (os.path.exists(os.path.join(root, "prices")) & os.path.exists(os.path.join(root, "news"))):
-            raise NotImplementedError(f"Could not find 'prices' and 'news' in root ({root})")
-
-        files = os.listdir(os.path.join(root, "prices"))
-        self.root = root
-        self.device = device
-        self.batch_size = batch_size
-        self.tickers = [ntpath.basename(f).split('.')[0] for f in files]
-        self.data = {ticker: {"prices": [], "news": []} for ticker in self.tickers}
+    def __init__(self, price_data, news_data, lookback_length):
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.prices, self.news = price_data, news_data
+        self.tickers = self.news.keys()
+        self.tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
+        self.lookback = lookback_length
         self.ptr = 0
 
-        # Align dates for prices data
-        tickers = self.tickers.copy()
-        all_price_data = [pd.read_csv(os.path.join(root, "prices", f+".csv")) for f in self.tickers]
-        self.dates = self._align_price_data(all_price_data, tickers)
-        self._compile_news_data()
-
-    def _align_price_data(self, all_price_data, tickers):
-        keep_cols = ["Date", "Low", "High", "Adj Close"]
-        price_cols = ["Low", "High", "Adj Close"]
-        maxlen_df = np.argmax([len(df) for df in all_price_data])
-        df = all_price_data.pop(maxlen_df)
-        tick = tickers.pop(maxlen_df)
-
-        df["Date"] = pd.to_datetime(df["Date"])
-        df.drop([c for c in df.columns if c not in keep_cols], axis=1, inplace=True)
-        self.data[tick]["prices"] = df[price_cols].values.tolist()
-        df.drop(price_cols, axis=1, inplace=True)
-
-        for i in range(len(tickers)):
-            temp_df = all_price_data[i]
-            temp_df["Date"] = pd.to_datetime(temp_df["Date"])
-            temp_df.drop([c for c in temp_df.columns if c not in keep_cols], axis=1, inplace=True)
-            df = pd.merge(left=df, right=temp_df, on="Date", how="left")
-            self.data[tickers[i]]["prices"] = df[price_cols].values.tolist()
-            df.drop(price_cols, axis=1, inplace=True)
-        return df["Date"].values
-
-    def _compile_news_data(self):
-        for t in self.tickers:
-            js = json.load(open(os.path.join(self.root, "news", t+".json"), "r"))
-            dates = pd.to_datetime(pd.Series([d['time'][3:] for d in js])).values
-            texts = []
-            for i in range(len(js)):
-                if "text" in js[i].keys():
-                    texts.append(js[i]["text"])
-                else:
-                    texts.append(js[i]["title"])
-            texts = np.asarray(texts)
-            for d in self.dates:
-                locs = np.where(dates == d)[0]
-                dtexts = texts[locs].tolist()
-                self.data[t]["news"].append(dtexts)
-
     def __len__(self):
-        t = list(self.data.keys())[0]
-        return len(self.data[t]["prices"]) // self.batch_size
+        keys = list(self.prices.keys())
+        return len(self.prices[keys[0]]) - self.lookback 
 
     def flow(self):
-        prices, news = [], []
-        for _ in range(self.batch_size):
-            price_temp, news_temp = [], []
+        prices, news, targets = [], [], []
+
+        for i in range(self.lookback):
+            prices_temp, news_temp = [], []
             for t in self.tickers:
-                price_temp.append(self.data[t]["prices"][self.ptr])
-                news_temp.append(self.data[t]["news"][self.ptr])
-            prices.append(price_temp)
+                prices_temp.append(self.prices[t][self.ptr+i])
+                news_data = self.news[t][self.ptr+i]
+                input_tokens = self.tokenizer(news_data, padding=True, truncation=True, return_tensors='pt')['input_ids']
+                news_temp.append(input_tokens)
+
+            prices.append(prices_temp)
             news.append(news_temp)
-            self.ptr += 1
 
-            if self.ptr >= len(self.data[t]["prices"]):
-                self.ptr = 0
+        for t in self.tickers:
+            targets.append(1 if self.prices[t][self.ptr+self.lookback][-1] > 1.0 else 0)                
+        
+        self.ptr += 1
+        if self.ptr >= (len(self.prices) - self.lookback):
+            self.ptr = 0
 
-        return torch.from_numpy(prices).float().to(self.device), news
+        prices, targets = np.array(prices), np.array(targets)
+        prices = torch.from_numpy(prices).float().permute(1, 0, 2).to(self.device)
+        targets = torch.from_numpy(targets).long().to(self.device)
+        return prices, news, targets
 
 
-def get_dataloaders(root, batch_size):
-    pass
+def get_dataloaders(root, test_size, lookback_length):
+    prices, news = load_data(root)
+    keys = list(prices.keys())
+    train_size = int((1 - test_size) * len(prices[keys[0]]))
+    train_prices, train_news = {}, {}
+    test_prices, test_news = {}, {}
+
+    for t in prices.keys():
+        train_prices[t], test_prices[t] = prices[t][:train_size], prices[t][train_size:]
+        train_news[t], test_news[t] = news[t][:train_size], news[t][train_size:]
+
+    train_loader = DataLoader(train_prices, train_news, lookback_length)
+    test_loader = DataLoader(test_prices, test_news, lookback_length)
+    return train_loader, test_loader
+
+
+if __name__ == "__main__":
+
+    loader = DataLoader(root="../data", lookback_length=7)
+    prices, news, targets = loader.flow()
+
+    print(f"Prices: {prices.size()}")
+    print(f"Targets: {targets.size()}")
+    print(targets)
